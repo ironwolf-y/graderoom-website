@@ -80,8 +80,10 @@ exports.minSyncPeriod = function (donoData) {
 };
 ```
 
-`effectiveSyncPeriod` (line 805) is unchanged — it is `max(floor, user preference)` and
-is used for display only, never by the server gate.
+`effectiveSyncPeriod` (line 805) is unchanged — it is `max(floor, user preference)`. The
+server gate never reads it, but the client does: it is rendered as `syncInterval` and
+drives `nextAutoAt()` and `autoSyncDue()`, so it is what the auto-sync cadence actually
+runs on.
 
 The write-path guard at `server/dbClient.js:2875` (`value < minSyncPeriod(donoData)`)
 becomes a no-op, because the smallest entry in `syncPeriodOptions` is 15 minutes and
@@ -108,7 +110,16 @@ instead of hard-coding `4 * 60 * 60 * 1000` in `dbClient.js`.
 `exports.dbUserVersion` (`server/dbHelpers.js:28`) goes from 43 to 44, and a
 `_version44` / `__version44` pair is added following the pattern of the existing
 migrations. It moves `syncPeriod` to the new default **only for users whose stored
-value is the old default**, so a cadence somebody picked on purpose is left alone:
+value is the old default**, so a cadence somebody picked on purpose is left alone — with
+one caveat: 4 hours is itself an entry in `syncPeriodOptions`, so a user who deliberately
+chose 4 hours is indistinguishable from one who never chose anything and does move. A
+cadence of 15 or 30 minutes, 1, 2, 8, 12 or 24 hours survives untouched. Distinguishing
+the two would need an explicit "the user chose this" flag, which the schema does not
+have.
+
+The decision lives in one exported function, `version44Update(user)`, in
+`server/dbHelpers.js`. The migration and the standalone checks both call it, so the log
+line and the write cannot disagree and the checks cannot drift from the code:
 
 ```js
 const __version44 = async (db, user) => {

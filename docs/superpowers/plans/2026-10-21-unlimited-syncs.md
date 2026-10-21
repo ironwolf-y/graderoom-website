@@ -960,7 +960,7 @@ Expected: exit code 0 for all six, no output.
 node scripts/verify-sync.js
 ```
 
-Expected: thirty-one `ok` lines and exit code 0.
+Expected: thirty-nine `ok` lines and exit code 0.
 
 - [ ] **Step 3: Confirm the schema version and the updater list agree**
 
@@ -1006,7 +1006,7 @@ Then run the suite:
 node -e "const {MongoMemoryServer}=require('mongodb-memory-server');(async()=>{const m=await MongoMemoryServer.create({instance:{port:27017,dbName:'graderoom_test'}});const db=require('./server/dbClient.js');await db.config('mongodb://127.0.0.1:27017');const pass=await require('./server/dbTests.js').runAll();console.log(pass?'ALL TESTS PASSED':'TESTS FAILED');await m.stop();process.exit(pass?0:1)})().catch(e=>{console.error('ERR',e.message);process.exit(2)})"
 ```
 
-Expected: the run prints a line per test — `37 tests passed of 37 tests run.` — and ends with `ALL TESTS PASSED`.
+Expected: the run prints a line per test — `52 tests passed of 52 tests run.` — and ends with `ALL TESTS PASSED`.
 
 Two `Error handling ...` lines appear mid-run. Those come from `testSocketMalformedPayload`, which deliberately feeds the socket handlers bad payloads to prove they do not throw; they are expected output, not failures.
 
@@ -1027,3 +1027,37 @@ gh pr create --repo ironwolf-y/graderoom-website --base master --head feat/unlim
 ```
 
 Expected: a URL for the pull request inside the fork.
+
+---
+
+## Post-review amendments
+
+The whole-branch review after Task 7 found one Important issue and several Minors that
+re-grade to Important by effect. They were fixed in one pass, each with a failing test
+first. The steps above are the plan as written; where the shipped code differs, it
+differs as follows.
+
+1. **The migration decision lives in one function.** `version44Update(user)` in
+   `server/dbHelpers.js` decides what version 44 does. `_version44` in
+   `server/dbClient.js` asks it and follows its answer, and `scripts/verify-sync.js`
+   calls it too. The plan's Task 2 Step 6 had the script re-implement the decision,
+   which meant the script could not catch a regression in the real migration. The
+   version guard now lives in exactly one place, so the log line and the write cannot
+   disagree.
+2. **The version 44 log is accurate.** A user still on an older version is logged as
+   skipped, not as updated. The plan's Task 2 Step 3 logged every user as migrated.
+3. **The pending-user assertion is no longer vacuous.** The plan's Task 2 Step 6
+   asserted `version === currentVersion ? cadence === newDefault : true`, which was
+   true either way. It now asserts that a user left on version 42 stays on version 42
+   with the old cadence, that its log says skipped, and that the setup
+   `setSyncPeriod` calls actually succeeded. The Discord token is removed for the run
+   so the skipped-version-43 path is deterministic in any environment.
+4. **`getLimitMessage` no longer renders a negative wait.** A deadline that has already
+   passed reads "You can sync again now." instead of "You need to wait -5s".
+5. **The stale-copy check is part of the script.** The spec's verification layer 3
+   asked for a repeatable check that the old cooldown copy is gone; the plan only ran
+   it as a one-off command. `scripts/verify-sync.js` now asserts it, along with the
+   absence of the removed tier constants.
+
+Counts changed with them: the script grew from 31 to 39 checks, and the suite from 46
+to 52 assertions.

@@ -156,9 +156,9 @@ Users have tiers (free, donor, plus, premium) that affect:
 - `syncPeriod` (Settings > Advanced > PowerSchool Sync Settings, default 15m) is the user's
   auto-sync preference. `effectiveSyncPeriod()` = `max(tier minimum, syncPeriod)`, rendered as
   `syncInterval`; the tier minimum is rendered as `syncMinInterval`. The chip is clickable on
-  `syncMinInterval`; its sub-line reads `syncMinInterval` while waiting ("Auto in 10m" when an
-  auto-sync fires at the end of it, "Available in 45s" otherwise) and `syncInterval` once
-  clickable ("Auto in 15m"). Under a minute the chip counts in seconds.
+  `syncMinInterval`; its sub-line reads `syncMinInterval` while waiting ("Available in 45s")
+  and `syncInterval` once clickable ("Auto in 15m"). Under a minute the chip counts in
+  seconds.
 - `sync-limit` calls `syncBlocked(timestamp)`, pinning the chip to the server's deadline.
 - `syncPeriod` must be in the `deserializeUser` projection in `passport.js` to reach a render.
 - Theme access:

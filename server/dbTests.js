@@ -87,22 +87,42 @@ module.exports = {
         let stale = await makeUserAt(43);
         let chosen = await makeUserAt(43);
         let pending = await makeUserAt(42);
-        await db.setSyncPeriod(stale, oldDefault);
-        await db.setSyncPeriod(chosen, 24 * 60 * 60 * 1000);
-        await db.setSyncPeriod(pending, oldDefault);
+        customAssert((await db.setSyncPeriod(stale, oldDefault)).success, true, "Setup: the old default is stored");
+        customAssert((await db.setSyncPeriod(chosen, 24 * 60 * 60 * 1000)).success, true, "Setup: a chosen cadence is stored");
+        customAssert((await db.setSyncPeriod(pending, oldDefault)).success, true, "Setup: the pending user's old default is stored");
 
-        await db.updateAllUsers();
+        // Without a Discord token the version 43 migration is skipped, and that is what
+        // leaves a user on version 42. Taking the token away makes that true either way.
+        let token = process.env.DISCORD_TOKEN;
+        delete process.env.DISCORD_TOKEN;
+        let logs = [];
+        let realLog = console.log;
+        console.log = (...args) => logs.push(args.map(String).join(' '));
+        try {
+            await db.updateAllUsers();
+        } finally {
+            console.log = realLog;
+            if (token) {
+                process.env.DISCORD_TOKEN = token;
+            }
+        }
 
         let read = async (username) => (await db.getUser(username, {version: 1, syncPeriod: 1})).data.value;
         let staleUser = await read(stale);
         customAssert(staleUser.version, currentVersion, "A migrated user is on the current schema version");
         customAssert(staleUser.syncPeriod, newDefault, "The old default moves to the new one");
         customAssert((await read(chosen)).syncPeriod, 24 * 60 * 60 * 1000, "A cadence the user chose survives");
-        // A user left behind on an older version must never end up with its version bumped and
-        // its cadence untouched: the two move together or not at all
+
+        // A user whose version 43 migration was skipped must stay pending: the version and the
+        // cadence move together or not at all
         let pendingUser = await read(pending);
-        customAssert(pendingUser.version === currentVersion ? pendingUser.syncPeriod === newDefault : true, true,
-            "The version bump and the cadence change never disagree");
+        customAssert(pendingUser.version, 42, "A user waiting on version 43 stays pending");
+        customAssert(pendingUser.syncPeriod, oldDefault, "A pending user keeps the old cadence");
+
+        // The log must not claim a migration that did not happen
+        let pendingLogs = logs.filter(line => line.includes(pending));
+        customAssert(pendingLogs.some(line => line.includes("Skipped version 44")), true, "A pending user is logged as skipped");
+        customAssert(pendingLogs.some(line => line.includes("Updated") && line.includes("to version 44")), false, "A pending user is not logged as updated");
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");

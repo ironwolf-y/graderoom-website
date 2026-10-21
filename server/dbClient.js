@@ -58,7 +58,7 @@ const {
     nextSyncAllowed,
     ERRORS_COLLECTION_NAME,
     GENERAL_ERRORS_COLLECTION_NAME, minUsersForAverageCalc, SCHOOL_USERNAME_LOOKUP_COLLECTION_NAME, COSTS_COLLECTION_NAME, hash,
-    checkValidTerm, checkValidSemester, processClasses, nextSyncWhen, syncPeriodOptions, defaultSyncPeriod, previousDefaultSyncPeriod,
+    checkValidTerm, checkValidSemester, processClasses, nextSyncWhen, syncPeriodOptions, defaultSyncPeriod, version44Update,
     minSyncPeriod, appearanceKeys
 } = require("./dbHelpers");
 
@@ -1871,21 +1871,19 @@ const _version44 = async (db, username) => {
     }
 
     let user = res.data.value;
-    await safe(__version44, user);
+    // The decision belongs to one function, so the log and the write cannot disagree
+    let update = version44Update(user);
+    if (!update) {
+        // A user still on an older version is waiting on an earlier migration, so this one
+        // has not happened yet. Reporting it as done would log a migration that never ran.
+        return {success: false, data: {log: `Skipped version 44 for ${username}, still on version ${user.version}`}};
+    }
+    await safe(__version44, user, update);
 
     return {success: true, data: {log: `Updated ${username} to version 44`}};
 }
 
-const __version44 = async (db, user) => {
-    if (user.version !== 43) {
-        return;
-    }
-
-    let update = {version: 44};
-    // Only the old default moves. A cadence the user picked themselves stays.
-    if (user.syncPeriod === previousDefaultSyncPeriod) {
-        update.syncPeriod = defaultSyncPeriod;
-    }
+const __version44 = async (db, user, update) => {
     await _users(db, user.username).updateOne({username: user.username}, {$set: update});
 }
 

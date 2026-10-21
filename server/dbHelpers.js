@@ -809,6 +809,21 @@ exports.syncPeriodOptions = [15, 30, 60, 120, 240, 480, 720, 1440].map(m => m * 
 exports.defaultSyncPeriod = defaultSyncPeriod;
 exports.previousDefaultSyncPeriod = previousDefaultSyncPeriod;
 
+// The version 44 migration moves the auto-sync cadence off the old default, but only
+// where the stored value still is that default, so a cadence somebody picked on purpose
+// is left alone. The migration and the standalone checks both call this, so there is
+// one answer to what the migration does.
+exports.version44Update = function (user) {
+    if (user.version !== 43) {
+        return null;
+    }
+    let update = {version: 44};
+    if (user.syncPeriod === exports.previousDefaultSyncPeriod) {
+        update.syncPeriod = exports.defaultSyncPeriod;
+    }
+    return update;
+};
+
 exports.nextSyncAllowed = function (lastSyncTimestamp, donoData) {
     return Date.now() >= exports.nextSyncWhen(lastSyncTimestamp, donoData);
 };

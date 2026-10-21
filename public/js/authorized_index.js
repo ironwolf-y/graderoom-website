@@ -545,6 +545,10 @@ $.get("/donationProgress", function (data) {
             let now = new Date();
 
             let delta = date - now;
+            // A deadline that has already passed means the wait is over, not negative
+            if (delta <= 0) {
+                return "You can sync again now.";
+            }
             // The floor is a minute, so a wait under a minute says so in seconds.
             if (delta < 60000) {
                 return `You need to wait ${Math.ceil(delta / 1000)}s before syncing again.`;

@@ -32,29 +32,19 @@ check('a longer preference wins', helpers.effectiveSyncPeriod(free, 24 * 60 * 60
 check('no preference falls back to the floor', helpers.effectiveSyncPeriod(free, undefined), 60 * 1000);
 
 // ---- the version 44 migration ------------------------------------------------
-// The decision the migration makes on a user document, exercised without a database.
-const decideVersion44 = (user) => {
-    if (user.version !== 43) {
-        return null;
-    }
-    let update = {version: 44};
-    if (user.syncPeriod === helpers.previousDefaultSyncPeriod) {
-        update.syncPeriod = helpers.defaultSyncPeriod;
-    }
-    return update;
-};
-
+// The real decision, not a copy of it: the migration and these checks call the same
+// function, so a change to the migration shows up here.
 check('the old default moves to 15 minutes',
-    decideVersion44({version: 43, syncPeriod: helpers.previousDefaultSyncPeriod}),
+    helpers.version44Update({version: 43, syncPeriod: helpers.previousDefaultSyncPeriod}),
     {version: 44, syncPeriod: helpers.defaultSyncPeriod});
 check('a deliberate 30 minute choice survives',
-    decideVersion44({version: 43, syncPeriod: 30 * 60 * 1000}),
+    helpers.version44Update({version: 43, syncPeriod: 30 * 60 * 1000}),
     {version: 44});
 check('a deliberate 24 hour choice survives',
-    decideVersion44({version: 43, syncPeriod: 24 * 60 * 60 * 1000}),
+    helpers.version44Update({version: 43, syncPeriod: 24 * 60 * 60 * 1000}),
     {version: 44});
 check('a user pending on version 42 stays pending',
-    decideVersion44({version: 42, syncPeriod: helpers.previousDefaultSyncPeriod}),
+    helpers.version44Update({version: 42, syncPeriod: helpers.previousDefaultSyncPeriod}),
     null);
 
 // ---- the navbar chip ---------------------------------------------------------
@@ -98,5 +88,44 @@ check('the wait message reads in seconds',
 check('the wait message still reads in minutes',
     getLimitMessage(messageNow + 5 * 60000),
     'You need to wait 5m before syncing again.');
+check('a deadline already passed does not read as a negative wait',
+    getLimitMessage(messageNow - 5000),
+    'You can sync again now.');
+
+// ---- the copy that quotes a cooldown ------------------------------------------
+// The donation copy used to quote a tier cooldown. It must not go back to that.
+const copyFiles = [
+    'views/partials/user/settings_card.ejs',
+    'public/js/sync_control.js',
+    'public/js/authorized_index.js',
+];
+const bannedCopy = ['Sync once every', 'allows a sync as often as'];
+for (const file of copyFiles) {
+    const text = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    for (const banned of bannedCopy) {
+        check(`${file} does not quote "${banned}"`, text.includes(banned), false);
+    }
+}
+
+// The tier constants are gone; nothing may still name them. The names are built in
+// pieces so this file does not name them either.
+const removedConstants = ['free', 'donor', 'plus', 'premium'].map(tier => tier + 'SyncPeriod');
+let staleConstant = [];
+const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            walk(full);
+        } else if (['.js', '.ejs'].includes(path.extname(entry.name))) {
+            fs.readFileSync(full, 'utf8').split('\n').forEach((line, i) => {
+                if (removedConstants.some(name => line.includes(name))) {
+                    staleConstant.push(`${full}:${i + 1}`);
+                }
+            });
+        }
+    }
+};
+['server', 'views', 'public', 'scripts'].forEach(d => walk(path.join(__dirname, '..', d)));
+check('no file still names a removed tier constant', staleConstant, []);
 
 process.exit(failures ? 1 : 0);
