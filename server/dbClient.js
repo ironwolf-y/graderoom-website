@@ -58,7 +58,7 @@ const {
     nextSyncAllowed,
     ERRORS_COLLECTION_NAME,
     GENERAL_ERRORS_COLLECTION_NAME, minUsersForAverageCalc, SCHOOL_USERNAME_LOOKUP_COLLECTION_NAME, COSTS_COLLECTION_NAME, hash,
-    checkValidTerm, checkValidSemester, processClasses, nextSyncWhen, syncPeriodOptions, defaultSyncPeriod,
+    checkValidTerm, checkValidSemester, processClasses, nextSyncWhen, syncPeriodOptions, defaultSyncPeriod, previousDefaultSyncPeriod,
     minSyncPeriod, appearanceKeys
 } = require("./dbHelpers");
 
@@ -1864,6 +1864,31 @@ const __version43 = async (db, user) => {
     await _users(db, user.username).updateOne({username: user.username}, update);
 }
 
+const _version44 = async (db, username) => {
+    let res = await getUser(username, {version: 1, syncPeriod: 1});
+    if (!res.success) {
+        return res;
+    }
+
+    let user = res.data.value;
+    await safe(__version44, user);
+
+    return {success: true, data: {log: `Updated ${username} to version 44`}};
+}
+
+const __version44 = async (db, user) => {
+    if (user.version !== 43) {
+        return;
+    }
+
+    let update = {version: 44};
+    // Only the old default moves. A cadence the user picked themselves stays.
+    if (user.syncPeriod === previousDefaultSyncPeriod) {
+        update.syncPeriod = defaultSyncPeriod;
+    }
+    await _users(db, user.username).updateOne({username: user.username}, {$set: update});
+}
+
 // _versionN brings a user from N-1 up to N, so the list is indexed by N-1.
 // Adding a migration means writing it above and appending it here
 const versionUpdaters = [
@@ -1872,7 +1897,7 @@ const versionUpdaters = [
     _version16, _version17, _version18, _version19, _version20, _version21, _version22,
     _version23, _version24, _version25, _version26, _version27, _version28, _version29,
     _version30, _version31, _version32, _version33, _version34, _version35, _version36,
-    _version37, _version38, _version39, _version40, _version41, _version42, _version43
+    _version37, _version38, _version39, _version40, _version41, _version42, _version43, _version44
 ];
 
 if (versionUpdaters.length !== dbUserVersion) {

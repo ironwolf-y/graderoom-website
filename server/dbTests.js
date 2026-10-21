@@ -59,6 +59,50 @@ module.exports = {
         customAssert(nextSyncAllowed(Date.now(), free), false, "A sync right after the last one is refused");
         customAssert(nextSyncAllowed(Date.now() - 30 * 1000, free), false, "A sync inside the floor is refused");
         customAssert(nextSyncAllowed(Date.now() - 90 * 1000, free), true, "A sync past the floor is allowed");
+    }, testSyncPeriodMigration: async () => {
+        // The real migration, run against real user documents
+        const helpers = require("./dbHelpers");
+        const oldDefault = 4 * 60 * 60 * 1000;
+        const newDefault = 15 * 60 * 1000;
+        const currentVersion = helpers.dbUserVersion;
+        let now = new Date();
+        let year = now.getFullYear().toString().slice(2);
+
+        // makeUser reads the schema version off the helpers module as it builds a user, so a
+        // user can be created looking like it predates the migration
+        const makeUserAt = async (version) => {
+            helpers.dbUserVersion = version;
+            try {
+                let username = randomString(12).toLowerCase();
+                let [firstName, lastName] = [randomString(8), randomString(8)];
+                let schoolUsername = (firstName + "." + lastName + year + "@bcp.org").toLowerCase();
+                let password = randomString(1).toUpperCase() + randomString(5).toLowerCase() + randomInt(3);
+                await db.addUser("bellarmine", username, password, schoolUsername, false);
+                return username;
+            } finally {
+                helpers.dbUserVersion = currentVersion;
+            }
+        };
+
+        let stale = await makeUserAt(43);
+        let chosen = await makeUserAt(43);
+        let pending = await makeUserAt(42);
+        await db.setSyncPeriod(stale, oldDefault);
+        await db.setSyncPeriod(chosen, 24 * 60 * 60 * 1000);
+        await db.setSyncPeriod(pending, oldDefault);
+
+        await db.updateAllUsers();
+
+        let read = async (username) => (await db.getUser(username, {version: 1, syncPeriod: 1})).data.value;
+        let staleUser = await read(stale);
+        customAssert(staleUser.version, currentVersion, "A migrated user is on the current schema version");
+        customAssert(staleUser.syncPeriod, newDefault, "The old default moves to the new one");
+        customAssert((await read(chosen)).syncPeriod, 24 * 60 * 60 * 1000, "A cadence the user chose survives");
+        // A user left behind on an older version must never end up with its version bumped and
+        // its cadence untouched: the two move together or not at all
+        let pendingUser = await read(pending);
+        customAssert(pendingUser.version === currentVersion ? pendingUser.syncPeriod === newDefault : true, true,
+            "The version bump and the cadence change never disagree");
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");
