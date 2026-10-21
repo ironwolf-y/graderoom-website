@@ -46,13 +46,19 @@ module.exports = {
         customAssert((await db.removeUser("")).success, false, "Invalid user removal");
         customAssert((await db.removeUser(username)).success, true, "Valid user removal");
     }, testSyncPeriod: async () => {
-        const {effectiveSyncPeriod, minSyncPeriod, nextSyncWhen, defaultSyncPeriod} = require("./dbHelpers");
+        const {effectiveSyncPeriod, minSyncPeriod, nextSyncWhen, nextSyncAllowed, defaultSyncPeriod} = require("./dbHelpers");
         const free = [];
+        const premium = [{receivedValue: 5}];
         customAssert(effectiveSyncPeriod(free, defaultSyncPeriod), defaultSyncPeriod, "Sync period default");
-        customAssert(effectiveSyncPeriod(free, 15 * 60 * 1000), minSyncPeriod(free), "Sync period floors at plan minimum");
+        customAssert(effectiveSyncPeriod(free, 15 * 60 * 1000), 15 * 60 * 1000, "Sync period honors a shorter choice");
         customAssert(effectiveSyncPeriod(free, 24 * 60 * 60 * 1000), 24 * 60 * 60 * 1000, "Sync period honors longer choice");
         customAssert(effectiveSyncPeriod(free, undefined), minSyncPeriod(free), "Sync period without a setting");
         customAssert(nextSyncWhen(0, free), minSyncPeriod(free), "Server allowance ignores syncPeriod");
+        customAssert(minSyncPeriod(free), 60 * 1000, "The sync floor is a minute");
+        customAssert(minSyncPeriod(premium), minSyncPeriod(free), "Every tier shares one sync floor");
+        customAssert(nextSyncAllowed(Date.now(), free), false, "A sync right after the last one is refused");
+        customAssert(nextSyncAllowed(Date.now() - 30 * 1000, free), false, "A sync inside the floor is refused");
+        customAssert(nextSyncAllowed(Date.now() - 90 * 1000, free), true, "A sync past the floor is allowed");
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");
