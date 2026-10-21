@@ -153,7 +153,15 @@ module.exports = {
         let again = await creator.createAccounts(accounts, {school: "bellarmine"});
         customAssert(again.length, 2, "A second run still reports every account");
         customAssert(again.filter(r => !r.success).length, 2, "An account that already exists is reported, not fatal");
+        customAssert(again.every(r => !!r.message), true, "A failed account says why it failed");
         customAssert((await db.userExists({username: "importone"})).success, true, "The imported user exists");
+        // A rejected school email has to say so rather than coming back blank
+        let rejected = await creator.createAccounts(
+            [{school: "bellarmine", username: "bademail", password: "Passw0rdTest", schoolEmail: "not-a-school-email"}],
+            {school: "bellarmine"});
+        customAssert(rejected.length, 1, "A rejected account is reported");
+        customAssert(rejected[0].success, false, "A bad school email is refused");
+        customAssert(!!rejected[0].message, true, "A refused account says why");
         fs.unlinkSync(file);
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();

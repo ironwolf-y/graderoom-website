@@ -7,12 +7,12 @@
 //   [{"school": "bellarmine", "username": "jdoe", "password": "Passw0rd", "schoolEmail": "jane.doe26@bcp.org"}]
 //
 // A password may also be given as "password": null, which asks for one to be typed in.
-// The rules the server enforces are the ones the signup page enforces: a lowercase
-// letters-and-digits username, a password of 6 to 64 characters with a lowercase, an
-// uppercase and a digit in it, and a school email of the right shape.
+// The rules are the server's own, checked here with the same validators the signup
+// page uses, so a rejected account says exactly what is wrong with it.
 const fs = require('fs');
 const readline = require('readline');
 const dbClient = require("../server/dbClient");
+const {validateUsername, validatePassword, validateEmail} = require("../server/dbHelpers");
 
 exports.readAccounts = function (file) {
     let accounts = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -20,6 +20,27 @@ exports.readAccounts = function (file) {
         throw new Error("The accounts file must contain a JSON array");
     }
     return accounts;
+};
+
+/**
+ * Why this account cannot be created, or null when it is fine.
+ * @param {Object} account
+ * @param {string} school
+ * @param {string} password
+ * @returns {string|null}
+ */
+exports.checkAccount = function (account, school, password) {
+    if (!account.username || !validateUsername(account.username)) {
+        return "Username must contain only lowercase letters and numbers.";
+    }
+    let passwordProblem = validatePassword(password);
+    if (passwordProblem) {
+        return passwordProblem;
+    }
+    if (!account.schoolEmail || !validateEmail(account.schoolEmail, school)) {
+        return `This must be your ${school[0].toUpperCase() + school.substring(1)} school email.`;
+    }
+    return null;
 };
 
 exports.createAccounts = async function (accounts, {school} = {}) {
@@ -34,8 +55,18 @@ exports.createAccounts = async function (accounts, {school} = {}) {
         if (!password) {
             password = await promptPassword(account.username);
         }
+        // The server drops the reason a call failed, so it is checked here first
+        let problem = exports.checkAccount(account, accountSchool, password);
+        if (problem) {
+            results.push({username: account.username, success: false, message: problem});
+            continue;
+        }
         let res = await dbClient.addUser(accountSchool, account.username, password, account.schoolEmail, !!account.isAdmin);
-        results.push({username: account.username, success: res.success, message: res.data?.message});
+        results.push({
+            username: account.username,
+            success: res.success,
+            message: res.data?.message || res.message || (res.success ? "" : "Could not create the account.")
+        });
     }
     return results;
 };
