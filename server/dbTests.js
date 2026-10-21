@@ -123,6 +123,38 @@ module.exports = {
         let pendingLogs = logs.filter(line => line.includes(pending));
         customAssert(pendingLogs.some(line => line.includes("Skipped version 44")), true, "A pending user is logged as skipped");
         customAssert(pendingLogs.some(line => line.includes("Updated") && line.includes("to version 44")), false, "A pending user is not logged as updated");
+    }, testDeploymentConfig: async () => {
+        const {redisUrl, isBetaServer} = require("./config");
+        // A host that assigns the port must not silently become a beta server
+        customAssert(isBetaServer(10000, {}), true, "An unassigned port is beta without an explicit choice");
+        customAssert(isBetaServer(10000, {BETA: "false"}), false, "BETA=false forces stable on any port");
+        customAssert(isBetaServer(10000, {BETA: "true"}), true, "BETA=true forces beta on any port");
+        customAssert(isBetaServer(5996, {}), false, "Port 5996 is stable without an explicit choice");
+        customAssert(isBetaServer(5998, {}), true, "Port 5998 is beta without an explicit choice");
+        // An existing local setup has no REDIS_URL and must not change
+        customAssert(redisUrl(5996, {}), "redis://127.0.0.1:6379", "Redis falls back to the local port");
+        customAssert(redisUrl(5998, {}), "redis://127.0.0.1:6381", "Redis falls back to the local beta port");
+        customAssert(redisUrl(5996, {REDIS_URL: "redis://host:6380"}), "redis://host:6380", "REDIS_URL wins");
+    }, testCreateUsers: async () => {
+        const fs = require("fs");
+        const os = require("os");
+        const path = require("path");
+        const creator = require("../scripts/create-users");
+        let file = path.join(os.tmpdir(), "graderoom-accounts-" + randomString(8) + ".json");
+        fs.writeFileSync(file, JSON.stringify([
+            {school: "bellarmine", username: "importone", password: "Passw0rdTest", schoolEmail: "import.one26@bcp.org"},
+            {school: "bellarmine", username: "importtwo", password: "Passw0rdTest", schoolEmail: "import.two26@bcp.org"},
+        ]));
+        let accounts = creator.readAccounts(file);
+        customAssert(accounts.length, 2, "Both accounts are read");
+        let results = await creator.createAccounts(accounts, {school: "bellarmine"});
+        customAssert(results.filter(r => r.success).length, 2, "Both accounts are created");
+        // Running it again must not fail the batch over an account that already exists
+        let again = await creator.createAccounts(accounts, {school: "bellarmine"});
+        customAssert(again.length, 2, "A second run still reports every account");
+        customAssert(again.filter(r => !r.success).length, 2, "An account that already exists is reported, not fatal");
+        customAssert((await db.userExists({username: "importone"})).success, true, "The imported user exists");
+        fs.unlinkSync(file);
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");
