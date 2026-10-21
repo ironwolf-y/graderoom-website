@@ -1,4 +1,9 @@
 # Graderoom
+
+> **This is a fork.** The donation-tier sync cooldown has been removed: every tier syncs on
+> the same one minute floor, and the auto-sync cadence defaults to 15 minutes. See
+> `docs/superpowers/specs/2026-10-21-unlimited-syncs-design.md`. Everything else is upstream.
+
 Grade visualization with automatic web scraping from Powerschool for students.
 
 ## Setup  

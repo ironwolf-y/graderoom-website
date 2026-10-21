@@ -150,14 +150,15 @@ Additional CSS: `blur.css`, `responsive_blur.css`, `theme_backgrounds.css`, `fad
 
 Users have tiers (free, donor, plus, premium) that affect:
 - Rate limits (30/40/60/100 req/min)
-- Minimum sync intervals (4h/2h/1h/15min), the only thing the server gates on
-  (`nextSyncAllowed()` / `nextSyncWhen()` in `dbHelpers.js`).
-- `syncPeriod` (Settings > Advanced > PowerSchool Sync Settings, default 4h) is the user's
+- Minimum sync interval: one shared floor of 60s for every tier, the only thing the
+  server gates on (`nextSyncAllowed()` / `nextSyncWhen()` in `dbHelpers.js`). The
+  donation tier no longer buys a shorter wait.
+- `syncPeriod` (Settings > Advanced > PowerSchool Sync Settings, default 15m) is the user's
   auto-sync preference. `effectiveSyncPeriod()` = `max(tier minimum, syncPeriod)`, rendered as
   `syncInterval`; the tier minimum is rendered as `syncMinInterval`. The chip is clickable on
-  `syncMinInterval`; its sub-line reads `syncMinInterval` while waiting ("Auto in 2h" when an
-  auto-sync fires at the end of it, "Available in 2h" otherwise) and `syncInterval` once
-  clickable ("Auto in 4h").
+  `syncMinInterval`; its sub-line reads `syncMinInterval` while waiting ("Auto in 10m" when an
+  auto-sync fires at the end of it, "Available in 45s" otherwise) and `syncInterval` once
+  clickable ("Auto in 15m"). Under a minute the chip counts in seconds.
 - `sync-limit` calls `syncBlocked(timestamp)`, pinning the chip to the server's deadline.
 - `syncPeriod` must be in the `deserializeUser` projection in `passport.js` to reach a render.
 - Theme access:
