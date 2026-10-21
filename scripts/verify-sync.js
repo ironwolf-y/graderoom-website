@@ -89,4 +89,14 @@ check('just under two minutes it repaints every second', syncTickDelay(119999), 
 check('two minutes out it waits a minute', syncTickDelay(120000), 60000);
 check('fifteen minutes out it waits a minute', syncTickDelay(900000), 60000);
 
+// ---- the non-Bellarmine wait message ------------------------------------------
+const getLimitMessage = new Function('timestamp', extract('public/js/authorized_index.js', 'getLimitMessage', 8));
+const messageNow = Date.now();
+check('the wait message reads in seconds',
+    getLimitMessage(messageNow + 45000),
+    'You need to wait 45s before syncing again.');
+check('the wait message still reads in minutes',
+    getLimitMessage(messageNow + 5 * 60000),
+    'You need to wait 5m before syncing again.');
+
 process.exit(failures ? 1 : 0);

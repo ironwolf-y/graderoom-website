@@ -544,8 +544,13 @@ $.get("/donationProgress", function (data) {
             let date = new Date(timestamp);
             let now = new Date();
 
-            let hours = Math.floor((date - now) / 36e5);
-            let minutes = Math.ceil(((date - now) % 36e5) / 6e4);
+            let delta = date - now;
+            // The floor is a minute, so a wait under a minute says so in seconds.
+            if (delta < 60000) {
+                return `You need to wait ${Math.ceil(delta / 1000)}s before syncing again.`;
+            }
+            let hours = Math.floor(delta / 36e5);
+            let minutes = Math.ceil((delta % 36e5) / 6e4);
             let timeString = (hours > 0 ? hours + "h" + (minutes > 0 ? " " : "") : "") +
                 (minutes > 0 ? minutes + "m" : "");
             return `You need to wait ${timeString} before syncing again.`;
