@@ -57,4 +57,36 @@ check('a user pending on version 42 stays pending',
     decideVersion44({version: 42, syncPeriod: helpers.previousDefaultSyncPeriod}),
     null);
 
+// ---- the navbar chip ---------------------------------------------------------
+// The chip is plain browser code with no test harness, so its functions are
+// lifted out of the source and run here.
+const extract = (file, name, indent) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const pattern = new RegExp(`function ${name}\\([^)]*\\)\\s*\\{([\\s\\S]*?)\\n${' '.repeat(indent)}\\}`);
+    const match = src.match(pattern);
+    if (!match) {
+        throw new Error(`could not find ${name} in ${file}`);
+    }
+    return match[1];
+};
+
+const countdown = new Function('deadline', extract('public/js/sync_control.js', 'countdown', 4));
+const chipNow = Date.now();
+check('a 45 second wait reads in seconds', countdown(chipNow + 45000), '45s');
+check('a 5 second wait reads in seconds', countdown(chipNow + 5000), '5s');
+check('a 5 minute wait still reads in minutes', countdown(chipNow + 5 * 60000), '5m');
+check('a 30 minute wait still reads in minutes', countdown(chipNow + 30 * 60000), '30m');
+check('a passed deadline is null', countdown(chipNow - 1000), null);
+check('no deadline is null', countdown(0), null);
+
+const syncTickDelay = new Function('remaining', extract('public/js/sync_control.js', 'syncTickDelay', 4));
+
+check('no deadline waits a minute', syncTickDelay(0), 60000);
+check('a passed deadline waits a minute', syncTickDelay(-5), 60000);
+check('inside the floor it repaints every second', syncTickDelay(45000), 1000);
+check('at the floor it repaints every second', syncTickDelay(60000), 1000);
+check('just under two minutes it repaints every second', syncTickDelay(119999), 1000);
+check('two minutes out it waits a minute', syncTickDelay(120000), 60000);
+check('fifteen minutes out it waits a minute', syncTickDelay(900000), 60000);
+
 process.exit(failures ? 1 : 0);

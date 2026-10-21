@@ -203,6 +203,11 @@
 
         let delta = deadline - Date.now();
         if (delta <= 0) return null;
+        // The floor is a minute, so a remainder under a minute has to say so in seconds.
+        // Rounding it up to minutes would read as "1m" for the whole wait.
+        if (delta < 60000) {
+            return Math.ceil(delta / 1000) + 's';
+        }
         let hours = Math.floor(delta / 36e5);
         let minutes = Math.ceil((delta % 36e5) / 6e4);
         return (hours > 0 ? hours + 'h' + (minutes > 0 ? ' ' : '') : '') + (minutes > 0 ? minutes + 'm' : '');
@@ -237,11 +242,20 @@
 
     function scheduleSyncTick() {
         let deadline = syncState === 'ready' ? nextAutoAt() : nextAllowedAt();
-        let untilBoundary = deadline ? (deadline - Date.now()) % 60000 : 0;
+        let remaining = deadline ? deadline - Date.now() : 0;
         setTimeout(() => {
             syncControl();
             scheduleSyncTick();
-        }, untilBoundary > 0 ? untilBoundary : 60000);
+        }, syncTickDelay(remaining));
+    }
+
+    // A deadline under two minutes away is the sync floor, which counts down in
+    // seconds, so it needs to be repainted at least once a second. Longer
+    // deadlines land on a minute boundary as before.
+    function syncTickDelay(remaining) {
+        return remaining <= 0 ? 60000
+            : remaining < 120000 ? Math.max(1000, remaining % 1000)
+                : remaining % 60000 || 60000;
     }
 
     function maybeAutoSync() {
