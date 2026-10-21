@@ -13,7 +13,10 @@
 ## Global Constraints
 
 - `REDIS_URL` falls back to `redis://127.0.0.1:${httpPort + 383}` when unset, so every existing local setup keeps working.
-- `BETA=true` forces beta mode, `BETA=false` forces stable, and `BETA` unset keeps the old port-derived behaviour (`httpPort !== 5996`).
+- `BETA=true` forces beta mode, `BETA=false` forces stable, and `BETA` unset keeps the old port-derived behaviour (`httpPort !== 5996`). A port that is missing or not a number means stable.
+- The port is read from `PORT` or `port`, so a host that assigns a port in upper case works. `HOST` narrows the listener, and `127.0.0.1` is what a private instance wants.
+- The MongoDB URI is never logged with its password.
+- An account can always be recovered by its owner from the shell, with or without an email server.
 - `dotenv` must not override variables that are already set in the real environment.
 - The extension's Chrome ID must be the same on every user's machine, so the manifest carries a pinned `key`.
 - `TEST_EXTENSION_ID` is how the page finds a custom extension build; it already exists and must keep working.
@@ -664,3 +667,32 @@ gh pr create --repo ironwolf-y/graderoom-website --base feat/unlimited-syncs --h
 ```
 
 The pull request targets the fork's own feature branch, not upstream.
+
+---
+
+## Post-review amendments
+
+A review of the branch after the first pass found three things that would have
+stopped someone following the runbook, and several that would have bitten them later.
+They were fixed in one pass, each with a check first.
+
+1. **The port is read from `PORT` as well as `port`.** The server read `port` in lower
+   case only, so a host that sets `PORT` gave it a NaN port and it would not start.
+2. **A missing port means stable, not beta.** `isBetaServer(NaN)` said beta, so a
+   script run with no port configured wrote to the wrong database.
+3. **`HOST` narrows the listener**, so `127.0.0.1` makes a tunnel the only way in.
+4. **The MongoDB URI is redacted before it is logged.**
+5. **`dbClient.setPassword` and `scripts/set-password.js`** recover a forgotten
+   password from the shell. The admin panel has no way to reset somebody else's, so
+   without an email server a forgotten password was a locked-out account.
+6. **The account script catches the 16 character username limit and a capitalised
+   school name.** The server refuses both with no reason given.
+7. **The environment file is installed `600` with no working `SECRET` placeholder**, the
+   backup reads the server's own configuration and fails on an empty dump, and the
+   tunnel config drops a `noTLSVerify` that does nothing for an HTTP origin.
+8. **The runbook was rewritten** around all of it: the branch to clone, a MongoDB
+   install that works, installing `cloudflared` and putting its credentials where the
+   service can read them, the extension's origin needing a path, the service being
+   restarted after an environment edit, one patched extension folder for everyone
+   rather than each user generating their own key, the account file's permissions, and
+   the catalogue command's argument.

@@ -60,7 +60,13 @@ beta mode means two different things: a different Mongo database (`beta` instead
 
 `BETA` in the environment overrides the port: `BETA=true` forces beta, `BETA=false`
 forces stable, and leaving it unset keeps the old port-derived behaviour so the
-upstream beta deployment on 5998 is unaffected.
+upstream beta deployment on 5998 is unaffected. A port that is missing or not a number
+means stable, because beta is the surprising answer and a script with no port
+configured would otherwise write to the wrong database.
+
+The port itself is read from `PORT` or `port`, so a host that assigns a port in upper
+case works, and `HOST` can narrow the listener to `127.0.0.1` so that a tunnel is the
+only way in.
 
 ### 3. `.env` is loaded in production too
 
