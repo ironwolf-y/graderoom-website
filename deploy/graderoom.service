@@ -1,0 +1,19 @@
+[Unit]
+Description=Graderoom
+After=network.target mongod.service redis-server.service
+Wants=mongod.service redis-server.service
+
+[Service]
+Type=simple
+User=graderoom
+WorkingDirectory=/opt/graderoom
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/graderoom.env
+ExecStart=/usr/bin/node server/graderoom.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
