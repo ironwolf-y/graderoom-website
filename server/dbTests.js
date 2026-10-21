@@ -46,13 +46,83 @@ module.exports = {
         customAssert((await db.removeUser("")).success, false, "Invalid user removal");
         customAssert((await db.removeUser(username)).success, true, "Valid user removal");
     }, testSyncPeriod: async () => {
-        const {effectiveSyncPeriod, minSyncPeriod, nextSyncWhen, defaultSyncPeriod} = require("./dbHelpers");
+        const {effectiveSyncPeriod, minSyncPeriod, nextSyncWhen, nextSyncAllowed, defaultSyncPeriod} = require("./dbHelpers");
         const free = [];
+        const premium = [{receivedValue: 5}];
         customAssert(effectiveSyncPeriod(free, defaultSyncPeriod), defaultSyncPeriod, "Sync period default");
-        customAssert(effectiveSyncPeriod(free, 15 * 60 * 1000), minSyncPeriod(free), "Sync period floors at plan minimum");
+        customAssert(effectiveSyncPeriod(free, 15 * 60 * 1000), 15 * 60 * 1000, "Sync period honors a shorter choice");
         customAssert(effectiveSyncPeriod(free, 24 * 60 * 60 * 1000), 24 * 60 * 60 * 1000, "Sync period honors longer choice");
         customAssert(effectiveSyncPeriod(free, undefined), minSyncPeriod(free), "Sync period without a setting");
         customAssert(nextSyncWhen(0, free), minSyncPeriod(free), "Server allowance ignores syncPeriod");
+        customAssert(minSyncPeriod(free), 60 * 1000, "The sync floor is a minute");
+        customAssert(minSyncPeriod(premium), minSyncPeriod(free), "Every tier shares one sync floor");
+        customAssert(nextSyncAllowed(Date.now(), free), false, "A sync right after the last one is refused");
+        customAssert(nextSyncAllowed(Date.now() - 30 * 1000, free), false, "A sync inside the floor is refused");
+        customAssert(nextSyncAllowed(Date.now() - 90 * 1000, free), true, "A sync past the floor is allowed");
+    }, testSyncPeriodMigration: async () => {
+        // The real migration, run against real user documents
+        const helpers = require("./dbHelpers");
+        const oldDefault = 4 * 60 * 60 * 1000;
+        const newDefault = 15 * 60 * 1000;
+        const currentVersion = helpers.dbUserVersion;
+        let now = new Date();
+        let year = now.getFullYear().toString().slice(2);
+
+        // makeUser reads the schema version off the helpers module as it builds a user, so a
+        // user can be created looking like it predates the migration
+        const makeUserAt = async (version) => {
+            helpers.dbUserVersion = version;
+            try {
+                let username = randomString(12).toLowerCase();
+                let [firstName, lastName] = [randomString(8), randomString(8)];
+                let schoolUsername = (firstName + "." + lastName + year + "@bcp.org").toLowerCase();
+                let password = randomString(1).toUpperCase() + randomString(5).toLowerCase() + randomInt(3);
+                await db.addUser("bellarmine", username, password, schoolUsername, false);
+                return username;
+            } finally {
+                helpers.dbUserVersion = currentVersion;
+            }
+        };
+
+        let stale = await makeUserAt(43);
+        let chosen = await makeUserAt(43);
+        let pending = await makeUserAt(42);
+        customAssert((await db.setSyncPeriod(stale, oldDefault)).success, true, "Setup: the old default is stored");
+        customAssert((await db.setSyncPeriod(chosen, 24 * 60 * 60 * 1000)).success, true, "Setup: a chosen cadence is stored");
+        customAssert((await db.setSyncPeriod(pending, oldDefault)).success, true, "Setup: the pending user's old default is stored");
+
+        // Without a Discord token the version 43 migration is skipped, and that is what
+        // leaves a user on version 42. Taking the token away makes that true either way.
+        let token = process.env.DISCORD_TOKEN;
+        delete process.env.DISCORD_TOKEN;
+        let logs = [];
+        let realLog = console.log;
+        console.log = (...args) => logs.push(args.map(String).join(' '));
+        try {
+            await db.updateAllUsers();
+        } finally {
+            console.log = realLog;
+            if (token) {
+                process.env.DISCORD_TOKEN = token;
+            }
+        }
+
+        let read = async (username) => (await db.getUser(username, {version: 1, syncPeriod: 1})).data.value;
+        let staleUser = await read(stale);
+        customAssert(staleUser.version, currentVersion, "A migrated user is on the current schema version");
+        customAssert(staleUser.syncPeriod, newDefault, "The old default moves to the new one");
+        customAssert((await read(chosen)).syncPeriod, 24 * 60 * 60 * 1000, "A cadence the user chose survives");
+
+        // A user whose version 43 migration was skipped must stay pending: the version and the
+        // cadence move together or not at all
+        let pendingUser = await read(pending);
+        customAssert(pendingUser.version, 42, "A user waiting on version 43 stays pending");
+        customAssert(pendingUser.syncPeriod, oldDefault, "A pending user keeps the old cadence");
+
+        // The log must not claim a migration that did not happen
+        let pendingLogs = logs.filter(line => line.includes(pending));
+        customAssert(pendingLogs.some(line => line.includes("Skipped version 44")), true, "A pending user is logged as skipped");
+        customAssert(pendingLogs.some(line => line.includes("Updated") && line.includes("to version 44")), false, "A pending user is not logged as updated");
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");

@@ -25,7 +25,7 @@ exports.SCHOOL_USERNAME_LOOKUP_COLLECTION_NAME = 'school_username_lookup';
 exports.COSTS_COLLECTION_NAME = 'costs';
 
 // Change this when updateDB changes
-exports.dbUserVersion = 43;
+exports.dbUserVersion = 44;
 exports.dbClassVersion = 4;
 
 exports.sessionIdlePeriod = 8 * 60 * 60 * 1000;
@@ -36,10 +36,16 @@ exports.minUsersForAverageCalc = 9;
 const minDonoAmount = 3;
 const minPremiumAmount = 5;
 
-const freeSyncPeriod = 4 * 60 * 60 * 1000; // 4 hours
-const donorSyncPeriod = 2 * 60 * 60 * 1000; // 2 hours
-const plusSyncPeriod = 60 * 60 * 1000; // 1 hour
-const premiumSyncPeriod = 15 * 60 * 1000; // 15 minutes
+// Every tier syncs on the same floor now. The donation tier no longer buys a shorter
+// wait, so the constants that used to separate them are gone. The floor is short enough
+// to feel unlimited and long enough that a stuck client cannot hammer PowerSchool.
+const syncCooldown = 60 * 1000; // 1 minute
+
+// The auto-sync cadence is a separate preference from the floor, and 15 minutes is the
+// smallest entry in syncPeriodOptions. The old 4 hour default is kept so the schema
+// migration can tell a default apart from a choice.
+const defaultSyncPeriod = 15 * 60 * 1000; // 15 minutes
+const previousDefaultSyncPeriod = 4 * 60 * 60 * 1000; // 4 hours
 
 let _changelogArray = [];
 let _betaChangelogArray = [];
@@ -300,7 +306,7 @@ exports.makeUser = async (school, username, password, schoolUsername, isAdmin, b
                 },
                 loggedIn: [],
                 enableLogging: true,
-                syncPeriod: freeSyncPeriod,
+                syncPeriod: defaultSyncPeriod,
                 donoData: [],
                 discord: {},
                 nextAvailableFakePSAID: 1,
@@ -789,17 +795,9 @@ exports.donoAttributes = function (donos) {
 };
 
 exports.minSyncPeriod = function (donoData) {
-    let {donor, plus, premium} = exports.donoAttributes(donoData);
-    if (premium) {
-        return premiumSyncPeriod;
-    }
-    if (plus) {
-        return plusSyncPeriod;
-    }
-    if (donor) {
-        return donorSyncPeriod;
-    }
-    return freeSyncPeriod;
+    // The tier argument is kept so the call sites do not change, but it no longer
+    // selects anything: every plan waits the same minute.
+    return syncCooldown;
 };
 
 exports.effectiveSyncPeriod = function (donoData, syncPeriod) {
@@ -808,7 +806,23 @@ exports.effectiveSyncPeriod = function (donoData, syncPeriod) {
 
 exports.syncPeriodOptions = [15, 30, 60, 120, 240, 480, 720, 1440].map(m => m * 60 * 1000);
 
-exports.defaultSyncPeriod = freeSyncPeriod;
+exports.defaultSyncPeriod = defaultSyncPeriod;
+exports.previousDefaultSyncPeriod = previousDefaultSyncPeriod;
+
+// The version 44 migration moves the auto-sync cadence off the old default, but only
+// where the stored value still is that default, so a cadence somebody picked on purpose
+// is left alone. The migration and the standalone checks both call this, so there is
+// one answer to what the migration does.
+exports.version44Update = function (user) {
+    if (user.version !== 43) {
+        return null;
+    }
+    let update = {version: 44};
+    if (user.syncPeriod === exports.previousDefaultSyncPeriod) {
+        update.syncPeriod = exports.defaultSyncPeriod;
+    }
+    return update;
+};
 
 exports.nextSyncAllowed = function (lastSyncTimestamp, donoData) {
     return Date.now() >= exports.nextSyncWhen(lastSyncTimestamp, donoData);
