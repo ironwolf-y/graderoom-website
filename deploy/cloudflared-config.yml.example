@@ -1,0 +1,16 @@
+# A named tunnel gives a stable HTTPS hostname with no public IP on your machine.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create graderoom
+#   cloudflared tunnel route dns graderoom grades.example.com
+#
+# cloudflared writes the credentials to ~/.cloudflared/<tunnel-id>.json, so copy it
+# to /etc/cloudflared before installing the service, which runs as cloudflared-user
+# and cannot read your home directory.
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: grades.example.com
+    service: http://127.0.0.1:5996
+  - service: http_status:404

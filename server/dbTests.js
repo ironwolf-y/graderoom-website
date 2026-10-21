@@ -123,6 +123,104 @@ module.exports = {
         let pendingLogs = logs.filter(line => line.includes(pending));
         customAssert(pendingLogs.some(line => line.includes("Skipped version 44")), true, "A pending user is logged as skipped");
         customAssert(pendingLogs.some(line => line.includes("Updated") && line.includes("to version 44")), false, "A pending user is not logged as updated");
+    }, testDeploymentConfig: async () => {
+        const {redisUrl, isBetaServer, httpPort, listenHost} = require("./config");
+        // BETA decides the mode outright; without it the port still does, as it always did
+        customAssert(isBetaServer(10000, {}), true, "An unassigned port is beta without an explicit choice");
+        customAssert(isBetaServer(10000, {BETA: "false"}), false, "BETA=false forces stable on any port");
+        customAssert(isBetaServer(10000, {BETA: "true"}), true, "BETA=true forces beta on any port");
+        customAssert(isBetaServer(5996, {}), false, "Port 5996 is stable without an explicit choice");
+        customAssert(isBetaServer(5998, {}), true, "Port 5998 is beta without an explicit choice");
+        // With no port at all there is nothing to infer from, and beta is the surprising answer
+        customAssert(isBetaServer(NaN, {}), false, "A missing port is stable, not beta");
+        customAssert(isBetaServer(undefined, {}), false, "No port is stable, not beta");
+        // An existing local setup has no REDIS_URL and must not change
+        customAssert(redisUrl(5996, {}), "redis://127.0.0.1:6379", "Redis falls back to the local port");
+        customAssert(redisUrl(5998, {}), "redis://127.0.0.1:6381", "Redis falls back to the local beta port");
+        customAssert(redisUrl(5996, {REDIS_URL: "redis://host:6380"}), "redis://host:6380", "REDIS_URL wins");
+        // PaaS hosts set PORT in upper case, .env files use port in lower case
+        customAssert(httpPort({port: "5996"}), 5996, "A lower case port is read");
+        customAssert(httpPort({PORT: "8080"}), 8080, "An upper case PORT is read");
+        customAssert(httpPort({PORT: "8080", port: "5996"}), 8080, "PORT wins over port");
+        customAssert(listenHost({}), "", "Every interface is listened on by default");
+        customAssert(listenHost({HOST: "127.0.0.1"}), "127.0.0.1", "HOST narrows the listener");
+    }, testLoadEnvKeepsRealEnvironment: async () => {
+        // dotenv must not overwrite a variable the environment already sets
+        const {loadEnv} = require("./config");
+        let before = process.env.DBLINK_TEST_KEEP;
+        process.env.DBLINK_TEST_KEEP = "from-the-environment";
+        try {
+            loadEnv();
+            customAssert(process.env.DBLINK_TEST_KEEP, "from-the-environment", "A real environment variable survives loading .env");
+        } finally {
+            if (before === undefined) {
+                delete process.env.DBLINK_TEST_KEEP;
+            } else {
+                process.env.DBLINK_TEST_KEEP = before;
+            }
+        }
+    }, testCreateUsers: async () => {
+        const fs = require("fs");
+        const os = require("os");
+        const path = require("path");
+        const creator = require("../scripts/create-users");
+        let file = path.join(os.tmpdir(), "graderoom-accounts-" + randomString(8) + ".json");
+        fs.writeFileSync(file, JSON.stringify([
+            {school: "bellarmine", username: "importone", password: "Passw0rdTest", schoolEmail: "import.one26@bcp.org"},
+            {school: "bellarmine", username: "importtwo", password: "Passw0rdTest", schoolEmail: "import.two26@bcp.org"},
+        ]));
+        let accounts = creator.readAccounts(file);
+        customAssert(accounts.length, 2, "Both accounts are read");
+        let results = await creator.createAccounts(accounts, {school: "bellarmine"});
+        customAssert(results.filter(r => r.success).length, 2, "Both accounts are created");
+        // Running it again must not fail the batch over an account that already exists
+        let again = await creator.createAccounts(accounts, {school: "bellarmine"});
+        customAssert(again.length, 2, "A second run still reports every account");
+        customAssert(again.filter(r => !r.success).length, 2, "An account that already exists is reported, not fatal");
+        customAssert(again.every(r => !!r.message), true, "A failed account says why it failed");
+        customAssert((await db.userExists({username: "importone"})).success, true, "The imported user exists");
+        // A rejected school email has to say so rather than coming back blank
+        let rejected = await creator.createAccounts(
+            [{school: "bellarmine", username: "bademail", password: "Passw0rdTest", schoolEmail: "not-a-school-email"}],
+            {school: "bellarmine"});
+        customAssert(rejected.length, 1, "A rejected account is reported");
+        customAssert(rejected[0].success, false, "A bad school email is refused");
+        customAssert(!!rejected[0].message, true, "A refused account says why");
+        // The server refuses a username over 16 characters, and says nothing about why,
+        // so the script has to catch it first
+        let tooLong = await creator.createAccounts(
+            [{school: "bellarmine", username: "seventeencharslong", password: "Passw0rdTest", schoolEmail: "long.one26@bcp.org"}],
+            {school: "bellarmine"});
+        customAssert(tooLong[0].success, false, "A username over 16 characters is refused");
+        customAssert(tooLong[0].message, "Username must be 16 or fewer characters long.", "A long username says why");
+        // The school is stored in lower case everywhere else, and a capitalised one
+        // would fail a valid address
+        let capitalised = await creator.createAccounts(
+            [{school: "Bellarmine", username: "capschool", password: "Passw0rdTest", schoolEmail: "cap.school26@bcp.org"}],
+            {school: "Bellarmine"});
+        customAssert(capitalised[0].success, true, "A capitalised school name is accepted");
+        // A batch with one account that already exists still creates the rest
+        let mixed = await creator.createAccounts(
+            [{school: "bellarmine", username: "importone", password: "Passw0rdTest", schoolEmail: "import.one26@bcp.org"},
+             {school: "bellarmine", username: "importthree", password: "Passw0rdTest", schoolEmail: "import.three26@bcp.org"}],
+            {school: "bellarmine"});
+        customAssert(mixed.filter(r => r.success).length, 1, "A mixed batch still creates the new account");
+        customAssert(mixed.filter(r => !r.success).length, 1, "A mixed batch reports the existing one");
+        fs.unlinkSync(file);
+    }, testSetPassword: async () => {
+        // A forgotten password has to be recoverable without an email server
+        let username = "resetme" + randomString(4).toLowerCase();
+        await db.addUser("bellarmine", username, "Passw0rdTest", "reset.me26@bcp.org", false);
+        customAssert((await db.login(username, "Passw0rdTest")).success, true, "The original password works");
+        let res = await db.setPassword(username, "NewPassw0rd");
+        customAssert(res.success, true, "The password is set");
+        customAssert((await db.login(username, "NewPassw0rd")).success, true, "The new password works");
+        customAssert((await db.login(username, "Passw0rdTest")).success, false, "The old password no longer works");
+        // The server's own rules still apply
+        let weak = await db.setPassword(username, "short");
+        customAssert(weak.success, false, "A weak password is refused");
+        let missing = await db.setPassword("nosuchuser" + randomString(4).toLowerCase(), "NewPassw0rd");
+        customAssert(missing.success, false, "A user that does not exist is refused");
     }, testBetaKeyFunctions: async () => {
         let res = await db.addBetaKey();
         customAssert(res.success, true, "Add beta key");

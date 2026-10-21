@@ -1,12 +1,11 @@
 const express = require("express");
 const app = express();
 const http = require("http");
+const {loadEnv, httpPort: portFromEnv, listenHost, redisUrl, isBetaServer: betaFromEnv} = require("./config");
+loadEnv();
 const productionEnv = process.env.NODE_ENV === "production";
-if (!productionEnv) {
-    require("dotenv").config();
-}
-const httpPort = parseInt(process.env.port);
-const isBetaServer = httpPort !== 5996;
+const httpPort = portFromEnv();
+const isBetaServer = betaFromEnv(httpPort);
 const flash = require("connect-flash");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
@@ -64,8 +63,7 @@ mongo.config(mongoUrl, productionEnv, isBetaServer).then(() => {
 
         // required for passport
         let {RedisStore} = require("connect-redis");
-        let redisPort = httpPort + 383; // 6379 for stable, 6381 for beta
-        let redisClient = redis.createClient({url: `redis://127.0.0.1:${redisPort}`});
+        let redisClient = redis.createClient({url: redisUrl(httpPort)});
         await redisClient.connect();
         let store = new RedisStore({client: redisClient});
         let sessionMiddleware = session({
@@ -121,7 +119,7 @@ mongo.config(mongoUrl, productionEnv, isBetaServer).then(() => {
         });
         require("./sockets").sockets(io);
         require("./socketManager").setIo(io);
-        httpServer.listen(httpPort, () => {
+        httpServer.listen(httpPort, listenHost(), () => {
             if (process.platform === "win32") { // If on windows print ip for testing mobile app locally (mac ppl can comment this out when test)
                 "use strict";
 

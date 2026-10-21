@@ -1,0 +1,30 @@
+[Unit]
+Description=Graderoom
+After=network.target mongod.service redis-server.service
+Wants=mongod.service redis-server.service
+
+[Service]
+Type=simple
+User=graderoom
+Group=graderoom
+WorkingDirectory=/opt/graderoom
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/graderoom.env
+ExecStart=/usr/bin/node server/graderoom.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# The server writes nothing outside its working directory
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
