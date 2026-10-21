@@ -79,6 +79,13 @@ check('just under two minutes it repaints every second', syncTickDelay(119999), 
 check('two minutes out it waits a minute', syncTickDelay(120000), 60000);
 check('fifteen minutes out it waits a minute', syncTickDelay(900000), 60000);
 
+const syncPeriodText = new Function('syncInterval', extract('public/js/sync_control.js', 'syncPeriodText', 4));
+check('a one minute cadence reads as a minute', syncPeriodText(60000), 'minute');
+check('a fifteen minute cadence reads in minutes', syncPeriodText(900000), '15 minutes');
+check('an hourly cadence reads as an hour', syncPeriodText(3600000), 'hour');
+check('a daily cadence reads as a day', syncPeriodText(86400000), 'day');
+check('no cadence reads as nothing', syncPeriodText(0), null);
+
 // ---- the non-Bellarmine wait message ------------------------------------------
 const getLimitMessage = new Function('timestamp', extract('public/js/authorized_index.js', 'getLimitMessage', 8));
 const messageNow = Date.now();

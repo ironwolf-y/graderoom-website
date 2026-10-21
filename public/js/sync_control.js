@@ -229,7 +229,10 @@
 
     function syncPeriodText() {
         if (!syncInterval) return null;
-        if (syncInterval < 36e5) return (syncInterval / 6e4) + ' minutes';
+        if (syncInterval < 36e5) {
+            let minutes = syncInterval / 6e4;
+            return minutes === 1 ? 'minute' : minutes + ' minutes';
+        }
         if (syncInterval === 36e5) return 'hour';
         if (syncInterval === 864e5) return 'day';
         return (syncInterval / 36e5) + ' hours';

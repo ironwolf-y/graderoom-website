@@ -960,7 +960,7 @@ Expected: exit code 0 for all six, no output.
 node scripts/verify-sync.js
 ```
 
-Expected: thirty-nine `ok` lines and exit code 0.
+Expected: forty-four `ok` lines and exit code 0.
 
 - [ ] **Step 3: Confirm the schema version and the updater list agree**
 
@@ -1058,6 +1058,8 @@ differs as follows.
    asked for a repeatable check that the old cooldown copy is gone; the plan only ran
    it as a one-off command. `scripts/verify-sync.js` now asserts it, along with the
    absence of the removed tier constants.
+6. **`syncPeriodText` no longer says "1 minutes".** The one minute fallback rendered
+   as "Your grades automatically sync every 1 minutes." It now reads "every minute."
 
-Counts changed with them: the script grew from 31 to 39 checks, and the suite from 46
+Counts changed with them: the script grew from 31 to 44 checks, and the suite from 46
 to 52 assertions.
