@@ -1,10 +1,10 @@
 const express = require("express");
 const app = express();
 const http = require("http");
-const {loadEnv, redisUrl, isBetaServer: betaFromEnv} = require("./config");
+const {loadEnv, httpPort: portFromEnv, listenHost, redisUrl, isBetaServer: betaFromEnv} = require("./config");
 loadEnv();
 const productionEnv = process.env.NODE_ENV === "production";
-const httpPort = parseInt(process.env.port);
+const httpPort = portFromEnv();
 const isBetaServer = betaFromEnv(httpPort);
 const flash = require("connect-flash");
 const morgan = require("morgan");
@@ -119,7 +119,7 @@ mongo.config(mongoUrl, productionEnv, isBetaServer).then(() => {
         });
         require("./sockets").sockets(io);
         require("./socketManager").setIo(io);
-        httpServer.listen(httpPort, () => {
+        httpServer.listen(httpPort, listenHost(), () => {
             if (process.platform === "win32") { // If on windows print ip for testing mobile app locally (mac ppl can comment this out when test)
                 "use strict";
 

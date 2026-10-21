@@ -69,7 +69,18 @@ const config = async (url, prod, beta, testing = false) => {
     _testing = testing ?? _testing;
     _client?.close();
     _client = await MongoClient.connect(_url);
-    console.log(`Connected to mongodb at url: ${_url}`);
+    // The URI can carry a password, so it is not logged whole
+    console.log(`Connected to mongodb at url: ${redactUrl(_url)}`);
+};
+
+/**
+ * Hide the credentials in a MongoDB URI before it is logged.
+ * @param {string} url
+ * @returns {string}
+ */
+const redactUrl = function (url) {
+    if (!url) return url;
+    return url.replace(/\/\/([^:@/]+):([^@/]+)@/, '//$1:***@');
 };
 
 /**
@@ -3206,6 +3217,23 @@ const _deleteNotification = async (db, username, id) => {
     return {success: false};
 };
 
+// Setting a password without the old one is an owner-level operation. It needs shell
+// access to the machine the server runs on, and no route reaches it, so a forgotten
+// password can be recovered without an email server.
+const setPassword = (username, newPassword) => safe(_setPassword, lower(username), newPassword);
+const _setPassword = async (db, username, newPassword) => {
+    let message = validatePassword(newPassword);
+    if (message) {
+        return {success: false, data: {message: message}};
+    }
+    let hash = await bcrypt.hash(newPassword, ROUNDS_TO_GENERATE_SALT);
+    let res = await _users(db, username).updateOne({username: username}, {$set: {password: hash}});
+    if (res.matchedCount === 0) {
+        return {success: false, data: {log: `Error setting password for ${username}`, message: "No such user"}};
+    }
+    return {success: true, data: {log: `Set password for ${username}`}};
+};
+
 const changePassword = (username, oldPassword, newPassword) => safe(_changePassword, lower(username), oldPassword, newPassword);
 const _changePassword = async (db, username, oldPassword, newPassword) => {
     return new Promise(async resolve => {
@@ -6226,6 +6254,7 @@ module.exports = {
     updateNotification: updateNotification,
     deleteNotification: deleteNotification,
     changePassword: changePassword,
+    setPassword: setPassword,
     changeSchoolEmail: changeSchoolEmail,
     disableGradeSync: disableGradeSync,
     makeAdmin: makeAdmin,

@@ -4,13 +4,13 @@
 #   cloudflared tunnel create graderoom
 #   cloudflared tunnel route dns graderoom grades.example.com
 #
-# Then point the tunnel at this file and run cloudflared as a service.
+# cloudflared writes the credentials to ~/.cloudflared/<tunnel-id>.json, so copy it
+# to /etc/cloudflared before installing the service, which runs as cloudflared-user
+# and cannot read your home directory.
 tunnel: <tunnel-id>
 credentials-file: /etc/cloudflared/<tunnel-id>.json
 
 ingress:
   - hostname: grades.example.com
     service: http://127.0.0.1:5996
-    originRequest:
-      noTLSVerify: true
   - service: http_status:404

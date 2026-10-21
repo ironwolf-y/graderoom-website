@@ -1,6 +1,27 @@
 // Deployment decisions, kept pure so they can be tested without starting a server.
 
 /**
+ * The port to listen on. PaaS hosts set PORT in upper case, .env files and the
+ * upstream setup use port in lower case, so both are read.
+ * @param {Object} env
+ * @returns {number}
+ */
+exports.httpPort = function (env = process.env) {
+    return parseInt(env.PORT || env.port);
+};
+
+/**
+ * The address to listen on. Empty means every interface, which is what the
+ * upstream server does. Set it to 127.0.0.1 when a tunnel in front of the box is
+ * the only way in.
+ * @param {Object} env
+ * @returns {string}
+ */
+exports.listenHost = function (env = process.env) {
+    return env.HOST || '';
+};
+
+/**
  * Where the session store lives. A hosted Redis has to be reachable by URL, so
  * REDIS_URL wins; without it the port-derived local default is used, which keeps
  * every existing local setup working unchanged.
@@ -24,6 +45,11 @@ exports.redisUrl = function (httpPort, env = process.env) {
 exports.isBetaServer = function (httpPort, env = process.env) {
     if (env.BETA !== undefined && env.BETA !== "") {
         return env.BETA === "true";
+    }
+    if (!httpPort || isNaN(httpPort)) {
+        // There is no port to infer from, and beta is the surprising answer, so the
+        // stable database is the one to act on
+        return false;
     }
     return httpPort !== 5996;
 };

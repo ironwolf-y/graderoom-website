@@ -12,6 +12,7 @@
 const fs = require('fs');
 const readline = require('readline');
 const dbClient = require("../server/dbClient");
+const {loadEnv, isBetaServer, httpPort} = require("../server/config");
 const {validateUsername, validatePassword, validateEmail} = require("../server/dbHelpers");
 
 exports.readAccounts = function (file) {
@@ -33,6 +34,9 @@ exports.checkAccount = function (account, school, password) {
     if (!account.username || !validateUsername(account.username)) {
         return "Username must contain only lowercase letters and numbers.";
     }
+    if (account.username.length > 16) {
+        return "Username must be 16 or fewer characters long.";
+    }
     let passwordProblem = validatePassword(password);
     if (passwordProblem) {
         return passwordProblem;
@@ -46,7 +50,8 @@ exports.checkAccount = function (account, school, password) {
 exports.createAccounts = async function (accounts, {school} = {}) {
     let results = [];
     for (let account of accounts) {
-        let accountSchool = account.school || school;
+        // The school is stored in lower case everywhere else, and the validators expect it
+        let accountSchool = (account.school || school || "").toLowerCase();
         if (!accountSchool) {
             results.push({username: account.username, success: false, message: "No school given"});
             continue;
@@ -65,7 +70,7 @@ exports.createAccounts = async function (accounts, {school} = {}) {
         results.push({
             username: account.username,
             success: res.success,
-            message: res.data?.message || res.message || (res.success ? "" : "Could not create the account.")
+            message: res.data?.message || (res.success ? "" : "Could not create the account.")
         });
     }
     return results;
@@ -73,9 +78,16 @@ exports.createAccounts = async function (accounts, {school} = {}) {
 
 const promptPassword = function (username) {
     let rl = readline.createInterface({input: process.stdin, output: process.stdout, terminal: true});
+    // Readline echoes what is typed. A password should not be on screen.
+    let muted = true;
+    rl._writeToOutput = function (text) {
+        rl.output.write(muted ? '*' : text);
+    };
     return new Promise(resolve => {
         rl.question(`Password for ${username}: `, answer => {
+            muted = false;
             rl.close();
+            console.log();
             resolve(answer);
         });
     });
@@ -87,8 +99,9 @@ const main = async function () {
         console.error("usage: node scripts/create-users.js <accounts.json>");
         process.exit(2);
     }
+    loadEnv();
     let url = process.env.DB_URL || "mongodb://127.0.0.1:27017";
-    await dbClient.config(url, process.env.NODE_ENV === "production", process.env.BETA === "true");
+    await dbClient.config(url, process.env.NODE_ENV === "production", isBetaServer(httpPort()));
     let accounts = exports.readAccounts(file);
     let results = await exports.createAccounts(accounts);
     let failed = 0;
@@ -105,5 +118,8 @@ const main = async function () {
 };
 
 if (require.main === module) {
-    main();
+    main().catch(e => {
+        console.error(e.message);
+        process.exit(1);
+    });
 }
